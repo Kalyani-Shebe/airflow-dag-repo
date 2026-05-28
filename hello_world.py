@@ -1,5 +1,4 @@
 from airflow import DAG
-<<<<<<< HEAD
 from airflow.operators.python import PythonOperator
 from datetime import datetime
 
@@ -16,5 +15,4 @@ with DAG(
     task = PythonOperator(
         task_id="hello_task",
         python_callable=hello
-=======
 
