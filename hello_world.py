@@ -14,5 +14,5 @@ with DAG(
 
     task = PythonOperator(
         task_id="hello_task",
-        python_callable=hello
+        python_callable=hello)
 
