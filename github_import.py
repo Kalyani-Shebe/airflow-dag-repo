@@ -1,57 +1,48 @@
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from datetime import datetime
-import os
-import shutil
 import subprocess
+import shutil
+import os
 
 DAGS_DIR = "/opt/airflow/dags"
 
 def import_repo(**context):
-repo_url = context["dag_run"].conf.get("repo_url")
 
-```
-if not repo_url:
-    raise ValueError("repo_url is required")
+    repo_url = context["dag_run"].conf.get("repo_url")
 
-repo_name = repo_url.split("/")[-1].replace(".git", "")
+    if not repo_url:
+        raise ValueError("repo_url missing")
 
-clone_dir = f"/tmp/{repo_name}"
-target_dir = f"{DAGS_DIR}/{repo_name}"
+    repo_name = repo_url.split("/")[-1].replace(".git", "")
 
-# Cleanup previous clone
-if os.path.exists(clone_dir):
-    shutil.rmtree(clone_dir)
+    clone_dir = f"/tmp/{repo_name}"
+    target_dir = f"{DAGS_DIR}/{repo_name}"
 
-# Clone repository
-subprocess.run(
-    ["git", "clone", repo_url, clone_dir],
-    check=True
-)
+    if os.path.exists(clone_dir):
+        shutil.rmtree(clone_dir)
 
-# Replace existing DAG folder if present
-if os.path.exists(target_dir):
-    shutil.rmtree(target_dir)
+    subprocess.run(
+        ["git", "clone", repo_url, clone_dir],
+        check=True
+    )
 
-shutil.copytree(
-    clone_dir,
-    target_dir
-)
+    if os.path.exists(target_dir):
+        shutil.rmtree(target_dir)
 
-print(f"Repository imported successfully: {repo_url}")
-```
+    shutil.copytree(
+        clone_dir,
+        target_dir
+    )
 
 with DAG(
-dag_id="github_import",
-start_date=datetime(2025, 1, 1),
-schedule=None,
-catchup=False,
-tags=["github"]
+    dag_id="github_import",
+    start_date=datetime(2025, 1, 1),
+    schedule=None,
+    catchup=False,
 ) as dag:
 
-```
-import_task = PythonOperator(
-    task_id="import_repo",
-    python_callable=import_repo
-)
-```
+    PythonOperator(
+        task_id="import_repo",
+        python_callable=import_repo,
+    )
