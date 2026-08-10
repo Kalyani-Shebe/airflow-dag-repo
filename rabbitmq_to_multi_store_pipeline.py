@@ -108,7 +108,7 @@ POSTGRES_PASSWORD = os.getenv(
 
 DATAHUB_URL = os.getenv(
     "DATAHUB_URL",
-    "http://datahub:9002",
+    "http://datahub-datahub-frontend.datahub-tenant.svc.cluster.local:9002",
 )
 
 
