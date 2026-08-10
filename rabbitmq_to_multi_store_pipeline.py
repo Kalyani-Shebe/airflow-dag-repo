@@ -38,7 +38,7 @@ RABBITMQ_USER = os.getenv(
 
 RABBITMQ_PASSWORD = os.getenv(
     "RABBITMQ_PASSWORD",
-    "",
+    "RabbitMQStrongPass123",
 )
 
 RABBITMQ_QUEUE = os.getenv(
