@@ -219,6 +219,91 @@ with DAG(
     ],
 ) as dag:
 
+
+    # ========================================================
+    # TASK 0
+    # Add dummy messages to RabbitMQ
+    # ========================================================
+
+    def publish_dummy_messages():
+
+        logging.info(
+            "Publishing dummy messages to RabbitMQ queue: %s",
+            RABBITMQ_QUEUE,
+        )
+
+        dummy_messages = [
+            {
+                "order_id": "ORD-1001",
+                "customer_id": "CUST-001",
+                "amount": 1250.50,
+                "order_date": "2026-08-10",
+            },
+            {
+                "order_id": "ORD-1002",
+                "customer_id": "CUST-002",
+                "amount": 875.25,
+                "order_date": "2026-08-10",
+            },
+            {
+                "order_id": "ORD-1003",
+                "customer_id": "CUST-003",
+                "amount": 2340.00,
+                "order_date": "2026-08-10",
+            },
+            {
+                "order_id": "ORD-1004",
+                "customer_id": "CUST-004",
+                "amount": 450.75,
+                "order_date": "2026-08-10",
+            },
+            {
+                "order_id": "ORD-1005",
+                "customer_id": "CUST-005",
+                "amount": 1999.99,
+                "order_date": "2026-08-10",
+            },
+        ]
+
+        with get_rabbitmq_connection() as conn:
+
+            conn.ensure_connection(
+                max_retries=3
+            )
+
+            simple_queue = conn.SimpleQueue(
+                RABBITMQ_QUEUE
+            )
+
+            try:
+
+                for message in dummy_messages:
+
+                    simple_queue.put(
+                        json.dumps(message)
+                    )
+
+                    logging.info(
+                        "Published message: %s",
+                        message,
+                    )
+
+            finally:
+
+                simple_queue.close()
+
+        logging.info(
+            "Successfully published %d dummy messages",
+            len(dummy_messages),
+        )
+
+        return True
+
+
+    task_publish_dummy_messages = PythonOperator(
+        task_id="publish_dummy_messages",
+        python_callable=publish_dummy_messages,
+    )
     # ========================================================
     # TASK 1
     # Validate RabbitMQ
