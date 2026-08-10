@@ -922,7 +922,8 @@ with DAG(
     # ========================================================
 
     (
-        task_validate_rabbitmq
+        task_publish_dummy_messages
+        >> task_validate_rabbitmq
         >> task_consume_rabbitmq
         >> task_transform
         >> task_write_postgres
