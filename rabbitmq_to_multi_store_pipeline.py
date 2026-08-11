@@ -1,18 +1,16 @@
 from airflow import DAG
 from airflow.operators.python import PythonOperator
-from airflow.utils.dates import days_ago
 
-from datetime import timedelta
-import os
+from datetime import datetime, timedelta
 import json
 import logging
+import os
 import queue as stdlib_queue
 
 import pandas as pd
 import psycopg2
-
-from datahub_provider.entities import Dataset as DataHubDataset
 from kombu import Connection
+from datahub_provider.entities import Dataset as DataHubDataset
 
 
 # ============================================================
@@ -50,22 +48,6 @@ RABBITMQ_QUEUE = os.getenv(
 
 # -----------------------------
 # Pipeline storage
-# -----------------------------
-#
-# IMPORTANT:
-# The current airflow-worker does NOT have a PVC mounted
-# at /data.
-#
-# Current worker mounts:
-#   /opt/airflow/dags
-#   /opt/airflow/logs
-#
-# Therefore use /opt/airflow/staging for now.
-#
-# Once a dedicated pipeline PVC is mounted, change this to:
-#
-#   PIPELINE_DATA_DIR=/data/staging
-#
 # -----------------------------
 
 PIPELINE_DATA_DIR = os.getenv(
@@ -107,10 +89,10 @@ POSTGRES_PASSWORD = os.getenv(
 # DataHub
 # -----------------------------
 
-#DATAHUB_URL = os.getenv(
-#    "DATAHUB_URL",
-#    "http://datahub-datahub-frontend.datahub-tenant.svc.cluster.local:9002",
-#)
+DATAHUB_ENV = os.getenv(
+    "DATAHUB_ENV",
+    "PROD",
+)
 
 
 # -----------------------------
@@ -127,16 +109,17 @@ MAX_MESSAGES = int(
 # ============================================================
 
 def ensure_data_dir():
-    """
-    Create and return the pipeline staging directory.
-    """
+    """Create and return the pipeline staging directory."""
 
     os.makedirs(
         PIPELINE_DATA_DIR,
         exist_ok=True,
     )
 
-    if not os.access(PIPELINE_DATA_DIR, os.W_OK):
+    if not os.access(
+        PIPELINE_DATA_DIR,
+        os.W_OK,
+    ):
         raise PermissionError(
             f"Pipeline directory is not writable: "
             f"{PIPELINE_DATA_DIR}"
@@ -151,7 +134,6 @@ def ensure_data_dir():
 
 
 def get_rabbitmq_connection():
-
     return Connection(
         hostname=RABBITMQ_HOST,
         port=RABBITMQ_PORT,
@@ -162,7 +144,6 @@ def get_rabbitmq_connection():
 
 
 def get_postgres_connection():
-
     if not POSTGRES_PASSWORD:
         raise ValueError(
             "POSTGRES_PASSWORD is not configured. "
@@ -187,7 +168,7 @@ def get_postgres_connection():
 default_args = {
     "owner": "data-eng",
     "depends_on_past": False,
-    "start_date": days_ago(1),
+    "start_date": datetime(2026, 8, 1),
     "email_on_failure": False,
     "email_on_retry": False,
     "retries": 2,
@@ -197,18 +178,13 @@ default_args = {
 
 with DAG(
     dag_id="rabbitmq_to_multi_store_pipeline",
-
     default_args=default_args,
-
     description=(
         "RabbitMQ -> Python/Pandas -> PostgreSQL "
         "-> local Airflow staging, with DataHub lineage"
     ),
-
     schedule="0 * * * *",
-
     catchup=False,
-
     tags=[
         "production",
         "rabbitmq",
@@ -220,10 +196,9 @@ with DAG(
     ],
 ) as dag:
 
-
     # ========================================================
     # TASK 0
-    # Add dummy messages to RabbitMQ
+    # Publish dummy messages to RabbitMQ
     # ========================================================
 
     def publish_dummy_messages():
@@ -305,6 +280,8 @@ with DAG(
         task_id="publish_dummy_messages",
         python_callable=publish_dummy_messages,
     )
+
+
     # ========================================================
     # TASK 1
     # Validate RabbitMQ
@@ -485,7 +462,7 @@ with DAG(
             DataHubDataset(
                 platform="rabbitmq",
                 name=RABBITMQ_QUEUE,
-                env="PROD",
+                env=DATAHUB_ENV,
             ),
         ],
     )
@@ -678,6 +655,8 @@ with DAG(
 
         connection = get_postgres_connection()
 
+        cursor = None
+
         try:
 
             cursor = connection.cursor()
@@ -700,6 +679,8 @@ with DAG(
             # -------------------------
             # Insert records
             # -------------------------
+
+            inserted_count = 0
 
             for _, row in df.iterrows():
 
@@ -753,11 +734,13 @@ with DAG(
                     ),
                 )
 
+                inserted_count += cursor.rowcount
+
             connection.commit()
 
             logging.info(
-                "PostgreSQL load completed: %d records",
-                len(df),
+                "PostgreSQL load completed: %d records inserted",
+                inserted_count,
             )
 
         except Exception:
@@ -772,7 +755,9 @@ with DAG(
 
         finally:
 
-            cursor.close()
+            if cursor is not None:
+                cursor.close()
+
             connection.close()
 
 
@@ -783,7 +768,7 @@ with DAG(
             DataHubDataset(
                 platform="postgres",
                 name=f"{POSTGRES_DB}.public.order_summary",
-                env="PROD",
+                env=DATAHUB_ENV,
             ),
         ],
     )
@@ -858,6 +843,7 @@ with DAG(
         task_id="verify_storage",
         python_callable=verify_storage,
     )
+
 
     # ========================================================
     # DAG DEPENDENCIES
