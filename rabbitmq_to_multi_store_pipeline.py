@@ -868,5 +868,4 @@ with DAG(
         >> task_transform
         >> task_write_postgres
         >> task_verify_storage
-        >> task_register_lineage
     )
