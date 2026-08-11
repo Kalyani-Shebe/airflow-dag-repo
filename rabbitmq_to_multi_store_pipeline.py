@@ -66,7 +66,7 @@ POSTGRES_HOST = os.getenv(
 )
 
 POSTGRES_PORT = int(
-    os.getenv("POSTGRES_PORT", "5432")
+    os.getenv("POSTGRES_DB_PORT", "5432")
 )
 
 POSTGRES_DB = os.getenv(
