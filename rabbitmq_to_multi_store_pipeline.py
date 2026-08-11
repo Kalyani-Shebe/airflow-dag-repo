@@ -61,26 +61,26 @@ PIPELINE_DATA_DIR = os.getenv(
 # -----------------------------
 
 POSTGRES_HOST = os.getenv(
-    "POSTGRES_HOST",
+    "MY_POSTGRES_HOST",
     "pg-primary.data-platform.svc.cluster.local",
 )
 
 POSTGRES_PORT = int(
-    os.getenv("POSTGRES_DB_PORT", "5432")
+    os.getenv("MY_POSTGRES_PORT", "5432")
 )
 
 POSTGRES_DB = os.getenv(
-    "POSTGRES_DB",
+    "MY_POSTGRES_DB",
     "data_warehouse",
 )
 
 POSTGRES_USER = os.getenv(
-    "POSTGRES_USER",
+    "MY_POSTGRES_USER",
     "postgres",
 )
 
 POSTGRES_PASSWORD = os.getenv(
-    "POSTGRES_PASSWORD",
+    "MY_POSTGRES_PASSWORD",
     "SuperSecretPassword",
 )
 
