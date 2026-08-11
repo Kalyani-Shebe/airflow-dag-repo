@@ -11,6 +11,7 @@ import queue as stdlib_queue
 import pandas as pd
 import psycopg2
 import requests
+from datahub_airflow_plugin.entities import Dataset as DataHubDataset
 from kombu import Connection
 
 
@@ -106,10 +107,10 @@ POSTGRES_PASSWORD = os.getenv(
 # DataHub
 # -----------------------------
 
-DATAHUB_URL = os.getenv(
-    "DATAHUB_URL",
-    "http://datahub-datahub-frontend.datahub-tenant.svc.cluster.local:9002",
-)
+#DATAHUB_URL = os.getenv(
+#    "DATAHUB_URL",
+#    "http://datahub-datahub-frontend.datahub-tenant.svc.cluster.local:9002",
+#)
 
 
 # -----------------------------
@@ -201,7 +202,7 @@ with DAG(
 
     description=(
         "RabbitMQ -> Python/Pandas -> PostgreSQL "
-        "-> local Airflow staging -> DataHub"
+        "-> local Airflow staging, with DataHub lineage"
     ),
 
     schedule="0 * * * *",
@@ -480,6 +481,12 @@ with DAG(
     task_consume_rabbitmq = PythonOperator(
         task_id="consume_rabbitmq_messages",
         python_callable=consume_rabbitmq,
+        inlets=[
+            DataHubDataset(
+                platform="rabbitmq",
+                name=RABBITMQ_QUEUE,
+            ),
+        ],
     )
 
 
@@ -771,6 +778,12 @@ with DAG(
     task_write_postgres = PythonOperator(
         task_id="write_to_postgresql",
         python_callable=write_to_postgres,
+        outlets=[
+            DataHubDataset(
+                platform="postgres",
+                name=f"{POSTGRES_DB}.public.order_summary",
+            ),
+        ],
     )
 
 
@@ -843,79 +856,6 @@ with DAG(
         task_id="verify_storage",
         python_callable=verify_storage,
     )
-
-
-    # ========================================================
-    # TASK 6
-    # DataHub health / lineage notification
-    # ========================================================
-
-    def register_lineage(**context):
-
-        execution_date = context["ds"]
-
-        lineage_event = {
-
-            "pipeline":
-                "rabbitmq_to_multi_store_pipeline",
-
-            "run_date":
-                execution_date,
-
-            "upstream":
-                "rabbitmq.orders.raw",
-
-            "transform":
-                "python.pandas",
-
-            "downstream": [
-                "postgres.order_summary",
-                "airflow_staging.orders_enriched",
-            ],
-        }
-
-        logging.info(
-            "Pipeline lineage:"
-        )
-
-        logging.info(
-            json.dumps(
-                lineage_event,
-                indent=2,
-            )
-        )
-
-        # -------------------------
-        # DataHub health check
-        # -------------------------
-
-        try:
-
-            response = requests.get(
-                f"{DATAHUB_URL}/health",
-                timeout=10,
-            )
-
-            logging.info(
-                "DataHub HTTP status: %s",
-                response.status_code,
-            )
-
-        except Exception as exc:
-
-            logging.warning(
-                "DataHub health check failed: %s",
-                exc,
-            )
-
-        return True
-
-
-    task_register_lineage = PythonOperator(
-        task_id="register_lineage_datahub",
-        python_callable=register_lineage,
-    )
-
 
     # ========================================================
     # DAG DEPENDENCIES
