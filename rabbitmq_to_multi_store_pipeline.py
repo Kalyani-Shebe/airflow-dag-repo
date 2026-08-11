@@ -10,8 +10,8 @@ import queue as stdlib_queue
 
 import pandas as pd
 import psycopg2
-import requests
-from datahub_airflow_plugin.entities import Dataset as DataHubDataset
+
+from datahub_provider.entities import Dataset as DataHubDataset
 from kombu import Connection
 
 
@@ -485,6 +485,7 @@ with DAG(
             DataHubDataset(
                 platform="rabbitmq",
                 name=RABBITMQ_QUEUE,
+                env="PROD",
             ),
         ],
     )
@@ -782,6 +783,7 @@ with DAG(
             DataHubDataset(
                 platform="postgres",
                 name=f"{POSTGRES_DB}.public.order_summary",
+                env="PROD",
             ),
         ],
     )
