@@ -11,7 +11,24 @@ import requests
 import pandas as pd
 import psycopg2
 from kombu import Connection
-from datahub_provider.entities import Dataset as DataHubDataset
+
+# ------------------------------------------------------------
+# DataHub lineage is optional. If the datahub-airflow-plugin
+# package isn't installed in this environment, don't let that
+# break DAG parsing for everyone -- just disable lineage.
+# Install with: pip install acryl-datahub-airflow-plugin
+# ------------------------------------------------------------
+try:
+    from datahub_provider.entities import Dataset as DataHubDataset
+    DATAHUB_AVAILABLE = True
+except ModuleNotFoundError:
+    DataHubDataset = None
+    DATAHUB_AVAILABLE = False
+    logging.warning(
+        "datahub_airflow_plugin is not installed; "
+        "DataHub lineage (inlets/outlets) will be skipped for this DAG. "
+        "Install 'acryl-datahub-airflow-plugin' to re-enable it."
+    )
 
 
 # ============================================================
@@ -38,7 +55,7 @@ RABBITMQ_USER = os.getenv(
 
 RABBITMQ_PASSWORD = os.getenv(
     "RABBITMQ_PASSWORD",
-    "RabbitMQStrongPass123",
+    "",
 )
 
 RABBITMQ_QUEUE = os.getenv(
@@ -82,7 +99,7 @@ POSTGRES_USER = os.getenv(
 
 POSTGRES_PASSWORD = os.getenv(
     "MY_POSTGRES_PASSWORD",
-    "SuperSecretPassword",
+    "",
 )
 
 
@@ -169,6 +186,13 @@ def get_postgres_connection():
         password=POSTGRES_PASSWORD,
         connect_timeout=10,
     )
+
+
+def make_dataset(platform, name, env):
+    """Return a DataHub Dataset entity, or None if the plugin isn't installed."""
+    if not DATAHUB_AVAILABLE:
+        return None
+    return DataHubDataset(platform=platform, name=name, env=env)
 
 
 # ============================================================
@@ -465,16 +489,19 @@ with DAG(
         return output_file
 
 
+    _consume_inlets = []
+    _rabbitmq_dataset = make_dataset(
+        platform="rabbitmq",
+        name=RABBITMQ_QUEUE,
+        env=DATAHUB_ENV,
+    )
+    if _rabbitmq_dataset is not None:
+        _consume_inlets.append(_rabbitmq_dataset)
+
     task_consume_rabbitmq = PythonOperator(
         task_id="consume_rabbitmq_messages",
         python_callable=consume_rabbitmq,
-        inlets=[
-            DataHubDataset(
-                platform="rabbitmq",
-                name=RABBITMQ_QUEUE,
-                env=DATAHUB_ENV,
-            ),
-        ],
+        inlets=_consume_inlets,
     )
 
 
@@ -771,16 +798,19 @@ with DAG(
             connection.close()
 
 
+    _postgres_outlets = []
+    _postgres_dataset = make_dataset(
+        platform="postgres",
+        name=f"{POSTGRES_DB}.public.order_summary",
+        env=DATAHUB_ENV,
+    )
+    if _postgres_dataset is not None:
+        _postgres_outlets.append(_postgres_dataset)
+
     task_write_postgres = PythonOperator(
         task_id="write_to_postgresql",
         python_callable=write_to_postgres,
-        outlets=[
-            DataHubDataset(
-                platform="postgres",
-                name=f"{POSTGRES_DB}.public.order_summary",
-                env=DATAHUB_ENV,
-            ),
-        ],
+        outlets=_postgres_outlets,
     )
 
 
@@ -849,7 +879,11 @@ with DAG(
         )
 
 
-        task_verify_storage = PythonOperator(
+    # NOTE: this was previously indented *inside* verify_storage(),
+    # so it never ran as a DAG-level statement and
+    # `task_verify_storage` would have been undefined when the
+    # dependency chain below referenced it. Moved out to fix that.
+    task_verify_storage = PythonOperator(
         task_id="verify_storage",
         python_callable=verify_storage,
     )
