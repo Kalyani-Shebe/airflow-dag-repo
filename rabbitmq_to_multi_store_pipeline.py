@@ -849,9 +849,105 @@ with DAG(
         )
 
 
-    task_verify_storage = PythonOperator(
+        task_verify_storage = PythonOperator(
         task_id="verify_storage",
         python_callable=verify_storage,
+    )
+
+
+    # ========================================================
+    # TASK 6
+    # Trigger SeaTunnel job
+    # ========================================================
+
+    def trigger_seatunnel_job(**context):
+        job_config = {
+            "env": {"job.mode": "batch"},
+            "source": [
+                {
+                    "plugin_name": "Jdbc",
+                    "result_table_name": "orders",
+                    "url": f"jdbc:postgresql://{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}",
+                    "driver": "org.postgresql.Driver",
+                    "user": POSTGRES_USER,
+                    "password": POSTGRES_PASSWORD,
+                    "query": "SELECT * FROM order_summary",
+                }
+            ],
+            "sink": [
+                {
+                    "plugin_name": "Console",
+                    "source_table_name": ["orders"],
+                }
+            ],
+        }
+
+        resp = requests.post(
+            f"{SEATUNNEL_REST_URL}/hazelcast/rest/maps/submit-job",
+            json=job_config,
+            params={"jobName": "airflow_triggered_order_sync"},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        job_id = resp.json()["jobId"]
+
+        logging.info("Submitted SeaTunnel job, jobId=%s", job_id)
+
+        context["ti"].xcom_push(key="seatunnel_job_id", value=job_id)
+        return job_id
+
+
+    task_trigger_seatunnel = PythonOperator(
+        task_id="trigger_seatunnel_job",
+        python_callable=trigger_seatunnel_job,
+    )
+
+
+    # ========================================================
+    # TASK 7
+    # Verify SeaTunnel job completion
+    # ========================================================
+
+    def verify_seatunnel_job(**context):
+        job_id = context["ti"].xcom_pull(
+            task_ids="trigger_seatunnel_job",
+            key="seatunnel_job_id",
+        )
+
+        terminal_states = {"FINISHED", "CANCELED", "FAILED", "UNKNOWABLE"}
+        max_wait_seconds = 600
+        poll_interval = 10
+        waited = 0
+
+        while waited < max_wait_seconds:
+            resp = requests.get(
+                f"{SEATUNNEL_REST_URL}/hazelcast/rest/maps/job-info/{job_id}",
+                timeout=15,
+            )
+            resp.raise_for_status()
+            info = resp.json()
+            status = info.get("jobStatus")
+
+            logging.info("SeaTunnel job %s status: %s", job_id, status)
+
+            if status in terminal_states:
+                if status != "FINISHED":
+                    raise RuntimeError(
+                        f"SeaTunnel job {job_id} ended with status {status}: "
+                        f"{info.get('errorMsg')}"
+                    )
+                logging.info("SeaTunnel job %s completed successfully", job_id)
+                return
+
+            time.sleep(poll_interval)
+            waited += poll_interval
+
+        raise TimeoutError(f"SeaTunnel job {job_id} did not finish in time")
+
+
+    task_verify_seatunnel = PythonOperator(
+        task_id="verify_seatunnel_job",
+        python_callable=verify_seatunnel_job,
     )
 
 
@@ -866,4 +962,6 @@ with DAG(
         >> task_transform
         >> task_write_postgres
         >> task_verify_storage
+        >> task_trigger_seatunnel
+        >> task_verify_seatunnel
     )
