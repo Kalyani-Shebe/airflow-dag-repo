@@ -99,7 +99,7 @@ POSTGRES_USER = os.getenv(
 
 POSTGRES_PASSWORD = os.getenv(
     "MY_POSTGRES_PASSWORD",
-    "",
+    "SuperSecretPassword",
 )
 
 
