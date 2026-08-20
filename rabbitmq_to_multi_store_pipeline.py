@@ -118,7 +118,7 @@ DATAHUB_ENV = os.getenv(
 
 SEATUNNEL_REST_URL = os.getenv(
     "SEATUNNEL_REST_URL",
-    "http://seatunnel.data-platform.svc.cluster.local:5801",
+    "http://seatunnel.seatunnel.svc.cluster.local:5801",
 )
 
 
