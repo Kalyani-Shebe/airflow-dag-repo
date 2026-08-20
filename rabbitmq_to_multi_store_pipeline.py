@@ -6,7 +6,8 @@ import json
 import logging
 import os
 import queue as stdlib_queue
-
+import time
+import requests
 import pandas as pd
 import psycopg2
 from kombu import Connection
@@ -92,6 +93,15 @@ POSTGRES_PASSWORD = os.getenv(
 DATAHUB_ENV = os.getenv(
     "DATAHUB_ENV",
     "PROD",
+)
+
+# -----------------------------
+# SeaTunnel
+# -----------------------------
+
+SEATUNNEL_REST_URL = os.getenv(
+    "SEATUNNEL_REST_URL",
+    "http://seatunnel.data-platform.svc.cluster.local:5801",
 )
 
 
